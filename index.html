@@ -232,7 +232,7 @@
 
             try {
                 // Спробуємо завантажити файл за відносним шляхом
-                const response = await fetch('./songs.csv');
+                const response = await fetch('songs.csv');
                 if (!response.ok) throw new Error('Не вдалося завантажити songs.csv автоматично');
                 
                 const text = await response.text();
