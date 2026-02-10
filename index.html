@@ -96,7 +96,7 @@
         }
         
         #loadingOverlay {
-            background: rgba(15, 23, 42, 0.9);
+            background: rgba(15, 23, 42, 0.95);
             z-index: 100;
         }
     </style>
@@ -104,15 +104,24 @@
 <body class="p-4 md:p-8">
 
     <!-- Loading State -->
-    <div id="loadingOverlay" class="fixed inset-0 flex flex-col items-center justify-center">
-        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500 mb-4"></div>
-        <p id="loadingText" class="text-xl font-bold tracking-widest uppercase">Завантаження пісень...</p>
+    <div id="loadingOverlay" class="fixed inset-0 flex flex-col items-center justify-center p-6 text-center">
+        <div id="loaderIcon" class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500 mb-4"></div>
+        <p id="loadingText" class="text-xl font-bold tracking-widest uppercase mb-4">Завантаження пісень...</p>
+        
+        <!-- Скрытый инпут для выбора файла -->
+        <input type="file" id="fileInput" accept=".csv" class="hidden" onchange="handleFileSelect(event)">
+        
+        <!-- Кнопка выбора файла, если автозагрузка не удалась -->
+        <button id="fallbackBtn" onclick="document.getElementById('fileInput').click()" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl font-bold transition-all flex items-center gap-2">
+            <i data-lucide="file-up"></i> Оберіть файл songs.csv
+        </button>
     </div>
 
     <div id="app" class="max-w-6xl mx-auto hidden">
         <!-- Header -->
         <header class="text-center mb-10">
             <h1 class="text-4xl md:text-6xl font-900 mb-2 glow-text uppercase tracking-tighter">Музичний Квіз</h1>
+            <p class="text-indigo-400 font-medium italic">Вгадай пісню за мінімальну кількість слів</p>
         </header>
 
         <!-- Game Stats -->
@@ -157,7 +166,7 @@
         <!-- Controls -->
         <div class="flex flex-wrap justify-center gap-4">
             <button id="showAnswerBtn" onclick="showAnswer(true)" class="bg-slate-700/50 hover:bg-slate-700 text-white px-8 py-4 rounded-2xl font-bold flex items-center gap-2 transition-all">
-                <i data-lucide="help-circle"></i> Сдатися
+                <i data-lucide="help-circle"></i> Здатися
             </button>
             <button onclick="nextRound()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-2 transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-indigo-900/20">
                 Наступний раунд <i data-lucide="arrow-right"></i>
@@ -175,46 +184,68 @@
             lucide.createIcons();
         }
 
-        // Функція завантаження CSV
+        // Обробка тексту CSV
+        function parseCSV(text) {
+            const lines = text.split('\n').filter(line => line.trim().length > 0);
+            return lines.map(line => {
+                const parts = line.split(';');
+                if (parts.length >= 2) {
+                    return {
+                        lyrics: parts[0].trim(),
+                        title: parts[1].trim()
+                    };
+                }
+                return null;
+            }).filter(s => s !== null);
+        }
+
+        // Запуск гри після отримання даних
+        function startQuiz(data) {
+            if (!data || data.length === 0) {
+                alert("Помилка: Не знайдено коректних даних у файлі.");
+                return;
+            }
+            songData = data;
+            document.getElementById('loadingOverlay').classList.add('hidden');
+            document.getElementById('app').classList.remove('hidden');
+            loadRound(0);
+        }
+
+        // Ручний вибір файлу (якщо fetch не спрацював)
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const songs = parseCSV(e.target.result);
+                startQuiz(songs);
+            };
+            reader.readAsText(file);
+        }
+
+        // Функція завантаження CSV (спроба автозавантаження)
         async function loadSongsFromCSV() {
             const loadingText = document.getElementById('loadingText');
+            const fallbackBtn = document.getElementById('fallbackBtn');
+            const loaderIcon = document.getElementById('loaderIcon');
+
             try {
-                const response = await fetch('songs.csv');
-                if (!response.ok) throw new Error('Файл songs.csv не знайдено');
+                // Спробуємо завантажити файл за відносним шляхом
+                const response = await fetch('./songs.csv');
+                if (!response.ok) throw new Error('Не вдалося завантажити songs.csv автоматично');
                 
                 const text = await response.text();
-                const lines = text.split('\n').filter(line => line.trim().length > 0);
-                
-                const parsedSongs = lines.map(line => {
-                    const parts = line.split(';');
-                    if (parts.length >= 2) {
-                        return {
-                            lyrics: parts[0].trim(),
-                            title: parts[1].trim()
-                        };
-                    }
-                    return null;
-                }).filter(s => s !== null);
-
-                if (parsedSongs.length === 0) throw new Error('Файл songs.csv порожній або має невірний формат');
-                
-                songData = parsedSongs;
-                document.getElementById('loadingOverlay').classList.add('hidden');
-                document.getElementById('app').classList.remove('hidden');
-                loadRound(0);
+                const songs = parseCSV(text);
+                startQuiz(songs);
 
             } catch (error) {
-                console.error(error);
-                loadingText.innerHTML = `<span class="text-red-500">Помилка: ${error.message}</span><br><small class="normal-case opacity-50">Створіть songs.csv поруч із цим файлом</small>`;
-                // Якщо помилка, завантажуємо дефолтні, щоб додаток не вмер
-                songData = [
-                    { lyrics: "Червону руту не шукай вечорами", title: "Володимир Івасюк — Червона рута" }
-                ];
-                setTimeout(() => {
-                    document.getElementById('loadingOverlay').classList.add('hidden');
-                    document.getElementById('app').classList.remove('hidden');
-                    loadRound(0);
-                }, 3000);
+                console.warn("Auto-fetch failed, showing manual selector:", error.message);
+                // Показуємо кнопку вибору файлу, якщо автозавантаження заблоковано браузером
+                loadingText.innerHTML = `<span class="text-indigo-300">Локальний доступ обмежено браузером</span><br><small class="normal-case opacity-60">Будь ласка, вкажіть файл вручну для початку гри</small>`;
+                loaderIcon.classList.add('hidden');
+                fallbackBtn.classList.remove('hidden');
+                initIcons(); // оновити іконку на кнопці
             }
         }
 
